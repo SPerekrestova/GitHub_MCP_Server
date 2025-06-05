@@ -1,11 +1,10 @@
 import os
+from typing import Any
 
 import aiohttp
 from fastmcp import FastMCP
 
 mcp = FastMCP(name="GitHub Organization Repos Fetcher")
-
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 @mcp.tool
 async def get_org_repos(org: str) -> list[dict]:
@@ -14,10 +13,7 @@ async def get_org_repos(org: str) -> list[dict]:
     Returns a list of dicts with `name` and `url` keys.
     """
     url = f"https://api.github.com/orgs/{org}/repos"
-    headers = {}
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"token {GITHUB_TOKEN}"
-        headers["Accept"] = "application/vnd.github.v3+json"
+    headers = await add_headers()
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url=url, headers=headers) as response:
@@ -32,32 +28,35 @@ async def get_org_repos(org: str) -> list[dict]:
     ]
 
 @mcp.resource("documentation://{org_name}/{repo_name}")
-async def weather_resource(org: str, repo: str) -> str:
+async def documentation_resource(org_name: str, repo_name: str) -> list[dict[str, Any]] | str:
     """ Fetch /doc folder contents from a GitHub repository."""
-    url = f"https://api.github.com/repos/{org}/{repo}/contents"
-    headers = {}
-    if GITHUB_TOKEN:
-        headers["Authorization"] = f"token {GITHUB_TOKEN}"
-        headers["Accept"] = "application/vnd.github.v3+json"
+    url = f"https://api.github.com/repos/{org_name}/{repo_name}/contents/doc"
+    headers = await add_headers()
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url=url, headers=headers) as response:
-            # Check response status before returning
+            if response.status == 404:
+                return "Documentation folder not found."
             response.raise_for_status()
-            repos = await response.json()
+            repo = await response.json()
     # Filter for 'doc' folder and return its contents
-    docs = [item for item in repos if item["type"] == "dir" and item["name"] == "doc"]
+    docs = [item for item in repo if item["type"] == "file"]
     if not docs:
-        return "No documentation folder found."
-    doc_url = docs[0]["url"]
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url=doc_url, headers=headers) as response:
-            response.raise_for_status()
-            doc_contents = await response.json()
+        return "Empty documentation folder"
     return [
-        {"name": repo["name"], "url": repo["html_url"]}
-        for repo in repos
+        {"name": doc["name"]}
+        for doc in docs
     ]
+
+
+async def add_headers():
+    headers = {}
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"token {token}"
+        headers["Accept"] = "application/vnd.github.v3+json"
+    return headers
+
 
 if __name__ == "__main__":
     # By default, FastMCP will listen on localhost:8000
