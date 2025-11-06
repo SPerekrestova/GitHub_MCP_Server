@@ -114,10 +114,9 @@ def determine_content_type(filename: str) -> str:
 
 
 # ============================================================================
-# MCP Tools
+# Business Logic Functions (testable)
 # ============================================================================
 
-@mcp.tool()
 async def get_org_repos(org: str) -> List[Dict[str, Any]]:
     """
     Fetch all repositories from a GitHub organization
@@ -232,7 +231,6 @@ async def get_org_repos(org: str) -> List[Dict[str, Any]]:
         return result
 
 
-@mcp.tool()
 async def get_repo_docs(org: str, repo: str) -> List[Dict[str, Any]]:
     """
     Get all documentation files from a repository's /doc folder
@@ -319,7 +317,6 @@ async def get_repo_docs(org: str, repo: str) -> List[Dict[str, Any]]:
             return docs
 
 
-@mcp.tool()
 async def get_file_content(org: str, repo: str, path: str) -> Dict[str, Any]:
     """
     Fetch content of a specific file from GitHub
@@ -383,7 +380,6 @@ async def get_file_content(org: str, repo: str, path: str) -> Dict[str, Any]:
             }
 
 
-@mcp.tool()
 async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
     """
     Search for documentation files across all repositories in an organization
@@ -443,6 +439,133 @@ async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
 
             logger.info(f"Found {len(results)} matching files")
             return results
+
+
+# ============================================================================
+# MCP Tools Registration
+# ============================================================================
+
+@mcp.tool()
+async def get_org_repos_tool(org: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all repositories from a GitHub organization
+
+    This tool uses the GitHub Search API to efficiently find repositories
+    that have a /doc folder, falling back to checking each repo individually
+    if the search API is unavailable.
+
+    Args:
+        org: GitHub organization name (e.g., "microsoft", "google")
+
+    Returns:
+        List of repository dictionaries with structure:
+        [
+            {
+                "id": "123456",
+                "name": "repo-name",
+                "description": "Repository description",
+                "url": "https://github.com/org/repo",
+                "hasDocFolder": true
+            },
+            ...
+        ]
+
+    Example:
+        repos = await get_org_repos("anthropics")
+    """
+    return await get_org_repos(org)
+
+
+@mcp.tool()
+async def get_repo_docs_tool(org: str, repo: str) -> List[Dict[str, Any]]:
+    """
+    Get all documentation files from a repository's /doc folder
+
+    Filters for supported file types: Markdown, Mermaid, SVG, OpenAPI, Postman
+
+    Args:
+        org: GitHub organization name
+        repo: Repository name
+
+    Returns:
+        List of documentation file dictionaries:
+        [
+            {
+                "id": "abc123...",
+                "name": "README.md",
+                "path": "doc/README.md",
+                "type": "markdown",
+                "size": 1234,
+                "url": "https://github.com/org/repo/blob/main/doc/README.md",
+                "download_url": "https://raw.githubusercontent.com/.../README.md",
+                "sha": "abc123..."
+            },
+            ...
+        ]
+
+    Example:
+        docs = await get_repo_docs("anthropics", "anthropic-sdk-python")
+    """
+    return await get_repo_docs(org, repo)
+
+
+@mcp.tool()
+async def get_file_content_tool(org: str, repo: str, path: str) -> Dict[str, Any]:
+    """
+    Fetch content of a specific file from GitHub
+
+    Decodes base64-encoded content returned by GitHub API
+
+    Args:
+        org: GitHub organization name
+        repo: Repository name
+        path: File path within repository (e.g., "doc/README.md")
+
+    Returns:
+        Dictionary with file metadata and content:
+        {
+            "name": "README.md",
+            "path": "doc/README.md",
+            "content": "# Documentation\\n\\nThis is...",
+            "size": 1234,
+            "sha": "abc123...",
+            "encoding": "base64"
+        }
+
+    Example:
+        content = await get_file_content("anthropics", "sdk", "doc/README.md")
+    """
+    return await get_file_content(org, repo, path)
+
+
+@mcp.tool()
+async def search_documentation_tool(org: str, query: str) -> List[Dict[str, Any]]:
+    """
+    Search for documentation files across all repositories in an organization
+
+    Uses GitHub Code Search API to find matching files in /doc folders
+
+    Args:
+        org: GitHub organization name
+        query: Search query string (e.g., "authentication", "API", "tutorial")
+
+    Returns:
+        List of search result dictionaries:
+        [
+            {
+                "name": "authentication.md",
+                "path": "doc/authentication.md",
+                "repository": "repo-name",
+                "url": "https://github.com/org/repo/blob/main/doc/auth.md",
+                "sha": "abc123..."
+            },
+            ...
+        ]
+
+    Example:
+        results = await search_documentation("anthropics", "streaming")
+    """
+    return await search_documentation(org, query)
 
 
 # ============================================================================
