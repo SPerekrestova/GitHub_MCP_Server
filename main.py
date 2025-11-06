@@ -4,11 +4,11 @@ GitHub MCP Server
 Provides GitHub API access via Model Context Protocol
 """
 
-import os
-import asyncio
-import logging
 import base64
-from typing import List, Dict, Any, Optional
+import logging
+import os
+from typing import List, Dict, Any
+
 import aiohttp
 from dotenv import load_dotenv
 from fastmcp import FastMCP
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Initialize MCP server with a descriptive name
 mcp = FastMCP("GitHub Knowledge Vault MCP Server")
 
-# Configuration - Load from environment
+# Configuration
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
 MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "8000"))
@@ -644,12 +644,8 @@ async def content_resource(org: str, repo: str, path: str) -> str:
 if __name__ == "__main__":
     # Run the MCP server
     logger.info("=" * 60)
-    logger.info("🚀 Starting GitHub MCP Server...")
+    logger.info("Starting GitHub MCP Server...")
     logger.info("=" * 60)
-    logger.info(f"📍 Server name: {mcp.name}")
-    logger.info(f"🔑 Token configured: {'Yes' if GITHUB_TOKEN else 'No'}")
-    logger.info(f"🌐 API Base: {GITHUB_API_BASE}")
-    logger.info(f"📊 Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
-    logger.info("=" * 60)
+    logger.info(f" Token configured: {'Yes' if GITHUB_TOKEN else 'No'}")
 
     mcp.run()
