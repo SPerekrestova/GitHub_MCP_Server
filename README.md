@@ -115,15 +115,32 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "github-docs": {
-      "command": "python",
-      "args": ["/path/to/GitHub_MCP_Server/main.py"],
+      "command": "python3",
+      "args": ["/absolute/path/to/GitHub_MCP_Server/main.py"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
-      }
+      },
+      "autoapprove": [
+        "get_org_repos_tool",
+        "get_repo_docs_tool",
+        "get_file_content_tool",
+        "search_documentation_tool"
+      ]
     }
   }
 }
 ```
+
+**Configuration file location:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+**Important notes:**
+- Replace `/absolute/path/to/GitHub_MCP_Server/main.py` with the actual path on your system
+- Replace `ghp_your_token_here` with your GitHub personal access token
+- The `autoapprove` field allows Claude to use these tools without prompting for permission
+- Use `python3` or `python` depending on your system configuration
 
 Then restart Claude Desktop and ask:
 - "What documentation exists in the anthropics organization?"
