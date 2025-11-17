@@ -78,21 +78,27 @@ Ask Claude:
 - `documentation://{org}/{repo}` - List documentation files
 - `content://{org}/{repo}/{path}` - Get file content
 
-## Alternative: Python Setup
+## Building from Source
 
-For developers modifying the code:
-
+**Local Docker build:**
 ```bash
-# Install
+# Enable BuildKit for faster builds
+export DOCKER_BUILDKIT=1
+
+# Build (~30 seconds with cache)
+docker build -t github-mcp-server:local .
+
+# Or use docker-compose
+docker-compose build
+```
+
+**Python setup (for development):**
+```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-
-# Configure
 cp .env.example .env
 # Add GITHUB_TOKEN to .env
-
-# Run
 python main.py
 ```
 
