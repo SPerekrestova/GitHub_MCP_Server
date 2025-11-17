@@ -11,38 +11,100 @@ Model Context Protocol server for GitHub API integration.
 - MCP-compliant tools and resources
 - Async/await design for performance
 
-## Setup
+## Quick Start with Docker (Recommended)
 
-1. Create virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+The easiest way to use GitHub MCP Server is with Docker - no Python installation required.
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. Pull the Pre-built Image
 
-3. Configure environment:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your GITHUB_TOKEN
-   ```
+```bash
+docker pull ghcr.io/sperekrestova/github-mcp-server:latest
+```
 
-   Get your GitHub token from: https://github.com/settings/tokens
-   Required scopes: `repo`, `read:org`, `read:user`
+### 2. Configure Claude Desktop
 
-4. Run server:
-   ```bash
-   python main.py
-   ```
+Add this to your `claude_desktop_config.json`:
+
+**Configuration file location:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+**Basic configuration:**
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+**Recommended configuration (with auto-approve):**
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      },
+      "autoapprove": [
+        "get_org_repos_tool",
+        "get_repo_docs_tool",
+        "get_file_content_tool",
+        "search_documentation_tool"
+      ]
+    }
+  }
+}
+```
+
+### 3. Get Your GitHub Token
+
+1. Go to: https://github.com/settings/tokens
+2. Generate new token (classic)
+3. Required scopes: `repo`, `read:org`, `read:user`
+4. Copy token and add to configuration
+
+### 4. Restart Claude Desktop
+
+Then ask Claude:
+- "What documentation exists in the anthropics organization?"
+- "Show me authentication docs from the SDK"
+- "Search for streaming examples in anthropics repos"
+
+### Why Docker?
+
+✅ **No Python installation required** - Works immediately on any system with Docker
+✅ **Consistent environment** - Same behavior across macOS, Windows, Linux
+✅ **Easy updates** - Just `docker pull` for the latest version
+✅ **Isolated dependencies** - No conflicts with your system packages
+✅ **Secure** - Runs as non-root user in minimal Alpine container
+✅ **Multi-platform** - Supports both Intel/AMD (amd64) and ARM (arm64)
 
 ## Environment Variables
 
 - `GITHUB_TOKEN` - GitHub personal access token (required for higher rate limits)
 - `GITHUB_API_BASE_URL` - GitHub API URL (default: https://api.github.com)
-- `MCP_SERVER_PORT` - Server port (default: 8000)
 - `LOG_LEVEL` - Logging level (default: INFO)
 
 ## MCP Tools
@@ -107,69 +169,82 @@ Get file content directly via URI.
 content://anthropics/anthropic-sdk-python/doc/README.md
 ```
 
-## Docker Deployment
-
-### Using Pre-built Docker Image
-
-Pull the latest image from GitHub Container Registry:
-
-```bash
-docker pull ghcr.io/sperekrestova/github-mcp-server:latest
-```
+## Advanced Docker Usage
 
 ### Building Docker Image Locally
 
 ```bash
-# Build the image
-docker build -t github-mcp-server .
+# Clone the repository
+git clone https://github.com/SPerekrestova/GitHub_MCP_Server.git
+cd GitHub_MCP_Server
 
-# Or use docker-compose
-docker-compose build
+# Build the image
+docker build -t github-mcp-server:local .
+
+# Use your local build in Claude Desktop
+# Replace "ghcr.io/sperekrestova/github-mcp-server:latest"
+# with "github-mcp-server:local" in your config
 ```
 
-### Running with Docker
+### Using Docker Compose
+
+```bash
+# Create .env file
+echo "GITHUB_TOKEN=ghp_your_token_here" > .env
+
+# Start the service
+docker-compose up
+
+# Or run in detached mode
+docker-compose up -d
+```
+
+### Running Docker Manually
 
 ```bash
 # Run interactively
 docker run -i --rm \
   -e GITHUB_TOKEN=ghp_your_token_here \
   ghcr.io/sperekrestova/github-mcp-server:latest
-
-# Or use docker-compose
-GITHUB_TOKEN=ghp_your_token_here docker-compose up
 ```
 
-### Claude Desktop Integration with Docker
+## Alternative Setup: Python (For Developers)
 
-Add this configuration to your `claude_desktop_config.json`:
+**Use this method if:**
+- You're developing or modifying the server code
+- You don't have Docker installed
+- You prefer running Python directly
 
-```json
-{
-  "mcpServers": {
-    "github-docs": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "GITHUB_TOKEN",
-        "ghcr.io/sperekrestova/github-mcp-server:latest"
-      ],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
-}
+### 1. Create virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-**Benefits of Docker deployment:**
-- No Python installation required
-- Consistent environment across platforms
-- Easy updates (`docker pull`)
-- Isolated dependencies
+### 2. Install dependencies
 
-## Claude Desktop Integration (Python)
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure environment
+
+```bash
+cp .env.example .env
+# Edit .env and add your GITHUB_TOKEN
+```
+
+Get your GitHub token from: https://github.com/settings/tokens
+Required scopes: `repo`, `read:org`, `read:user`
+
+### 4. Run server
+
+```bash
+python main.py
+```
+
+### Claude Desktop Configuration (Python)
 
 Add to your `claude_desktop_config.json`:
 
@@ -193,28 +268,22 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Configuration file location:**
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
 **Important notes:**
 - Replace `/absolute/path/to/GitHub_MCP_Server/main.py` with the actual path on your system
-- Replace `ghp_your_token_here` with your GitHub personal access token
-- The `autoapprove` field allows Claude to use these tools without prompting for permission
-- Use `python3` or `python` depending on your system configuration
+- Use `python3` or `python` depending on your system (check with `which python3`)
+- Ensure the virtual environment dependencies are installed before use
 
-Then restart Claude Desktop and ask:
-- "What documentation exists in the anthropics organization?"
-- "Show me authentication docs from the SDK"
-- "Search for streaming examples in anthropics repos"
+## Deployment Comparison
 
-## Testing
-
-Run the comprehensive test suite:
-```bash
-python test_all.py
-```
+| Feature | Docker (Recommended) | Python (Alternative) |
+|---------|---------------------|---------------------|
+| Setup complexity | ⭐ Simple | ⭐⭐⭐ Complex |
+| Python required | ❌ No | ✅ Yes (3.10+) |
+| Updates | `docker pull` | `git pull` + `pip install` |
+| Isolation | ✅ Complete | ⚠️ Virtual env only |
+| Cross-platform | ✅ Identical | ⚠️ May vary |
+| For end users | ✅ Recommended | ❌ Not recommended |
+| For developers | ✅ Supported | ✅ Recommended |
 
 ## Supported Documentation Formats
 
@@ -223,6 +292,13 @@ python test_all.py
 - SVG images (`.svg`)
 - OpenAPI specifications (`.yml`, `.yaml`, `.json`)
 - Postman collections (`.json`)
+
+## Testing
+
+Run the comprehensive test suite:
+```bash
+python test_all.py
+```
 
 ## License
 
