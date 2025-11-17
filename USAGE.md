@@ -4,7 +4,8 @@ Complete guide for using the GitHub MCP Server with examples for each tool and r
 
 ## Table of Contents
 
-- [Setup](#setup)
+- [Quick Start with Docker (Recommended)](#quick-start-with-docker-recommended)
+- [Getting Your GitHub Token](#getting-your-github-token)
 - [MCP Tools](#mcp-tools)
   - [get_org_repos](#get_org_repos)
   - [get_repo_docs](#get_repo_docs)
@@ -13,39 +14,109 @@ Complete guide for using the GitHub MCP Server with examples for each tool and r
 - [MCP Resources](#mcp-resources)
   - [documentation://](#documentation-resource)
   - [content://](#content-resource)
+- [Docker Deployment](#docker-deployment)
 - [Integration Examples](#integration-examples)
 - [Common Use Cases](#common-use-cases)
+- [Alternative Setup: Python](#alternative-setup-python-for-developers)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## Setup
+## Quick Start with Docker (Recommended)
+
+The easiest way to use the GitHub MCP Server is with Docker - no Python installation required.
+
+### Why Docker?
+
+Docker provides the simplest, most reliable deployment method:
+
+✅ **Zero Python setup** - No version conflicts, no virtual environments
+✅ **Cross-platform** - Identical behavior on macOS, Windows, and Linux
+✅ **Easy updates** - Single command to get the latest version
+✅ **Complete isolation** - No impact on your system packages
+✅ **Production-ready** - Secure, tested, optimized builds
+✅ **Multi-architecture** - Native support for Intel/AMD and Apple Silicon
 
 ### Prerequisites
 
-1. Python 3.10 or higher
-2. GitHub personal access token
-3. Required Python packages (see `requirements.txt`)
+1. Docker installed ([Get Docker](https://docs.docker.com/get-docker/))
+2. GitHub personal access token (see [Getting Your GitHub Token](#getting-your-github-token))
 
-### Installation
+### Step 1: Pull the Image
 
 ```bash
-# Clone or download the repository
-cd GitHub_MCP_Server
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env and add your GITHUB_TOKEN
+docker pull ghcr.io/sperekrestova/github-mcp-server:latest
 ```
 
-### Getting Your GitHub Token
+### Step 2: Configure Claude Desktop
+
+**Find your config file:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+**Basic configuration:**
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+**Recommended configuration (with auto-approve):**
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "-e", "GITHUB_API_BASE_URL",
+        "-e", "LOG_LEVEL",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here",
+        "GITHUB_API_BASE_URL": "https://api.github.com",
+        "LOG_LEVEL": "INFO"
+      },
+      "autoapprove": [
+        "get_org_repos_tool",
+        "get_repo_docs_tool",
+        "get_file_content_tool",
+        "search_documentation_tool"
+      ]
+    }
+  }
+}
+```
+
+### Step 3: Restart Claude Desktop
+
+Then ask Claude:
+- "What documentation exists in the anthropics organization?"
+- "Show me the authentication documentation from anthropic-sdk-python"
+- "Search for streaming examples in anthropics repos"
+
+---
+
+## Getting Your GitHub Token
 
 1. Go to: https://github.com/settings/tokens
 2. Click "Generate new token" → "Generate new token (classic)"
@@ -56,10 +127,7 @@ cp .env.example .env
    - `read:user` (basic user access)
 5. Click "Generate token"
 6. Copy the token (starts with `ghp_`)
-7. Add to `.env` file:
-   ```
-   GITHUB_TOKEN=ghp_your_actual_token_here
-   ```
+7. Add to your Claude Desktop configuration
 
 ---
 
@@ -96,22 +164,9 @@ for repo in repos:
         print(f"✓ {repo['name']} - {repo['url']}")
 ```
 
-**Command Line Test:**
+**Via Claude Desktop:**
 
-```bash
-python -c "
-import asyncio
-from main import get_org_repos
-
-async def test():
-    repos = await get_org_repos('anthropics')
-    print(f'Found {len(repos)} repositories')
-    for r in repos[:5]:
-        print(f'  - {r[\"name\"]} (has /doc: {r[\"hasDocFolder\"]})')
-
-asyncio.run(test())
-"
-```
+Simply ask Claude: *"What repositories with documentation exist in the anthropics organization?"*
 
 **Use Cases:**
 - Discover which repositories have documentation
@@ -168,22 +223,9 @@ for doc_type, count in by_type.items():
     print(f"  {doc_type}: {count}")
 ```
 
-**Command Line Test:**
+**Via Claude Desktop:**
 
-```bash
-python -c "
-import asyncio
-from main import get_repo_docs
-
-async def test():
-    docs = await get_repo_docs('anthropics', 'anthropic-sdk-python')
-    print(f'Found {len(docs)} documentation files')
-    for d in docs:
-        print(f'  - {d[\"name\"]} ({d[\"type\"]}, {d[\"size\"]} bytes)')
-
-asyncio.run(test())
-"
-```
+Ask Claude: *"List all documentation files in the anthropic-sdk-python repository"*
 
 **Use Cases:**
 - List all documentation in a repository
@@ -229,26 +271,9 @@ print(f"Size: {file_data['size']} bytes")
 print(f"\nContent:\n{content}")
 ```
 
-**Command Line Test:**
+**Via Claude Desktop:**
 
-```bash
-python -c "
-import asyncio
-from main import get_file_content
-
-async def test():
-    content = await get_file_content(
-        'anthropics',
-        'anthropic-sdk-python',
-        'doc/README.md'
-    )
-    print(f'File: {content[\"name\"]}')
-    print(f'Size: {content[\"size\"]} bytes')
-    print(f'Preview: {content[\"content\"][:200]}...')
-
-asyncio.run(test())
-"
-```
+Ask Claude: *"Show me the content of doc/README.md from the anthropic-sdk-python repository"*
 
 **Use Cases:**
 - Read documentation content
@@ -290,22 +315,9 @@ for r in results:
     print(f"    URL: {r['url']}")
 ```
 
-**Command Line Test:**
+**Via Claude Desktop:**
 
-```bash
-python -c "
-import asyncio
-from main import search_documentation
-
-async def test():
-    results = await search_documentation('anthropics', 'API')
-    print(f'Found {len(results)} results')
-    for r in results[:5]:
-        print(f'  - {r[\"name\"]} in {r[\"repository\"]}')
-
-asyncio.run(test())
-"
-```
+Ask Claude: *"Search for authentication examples in anthropics documentation"*
 
 **Use Cases:**
 - Find documentation by keyword
@@ -409,24 +421,6 @@ print(content)
 
 ## Docker Deployment
 
-### Quick Start with Docker
-
-The easiest way to use the GitHub MCP Server is with Docker - no Python installation required.
-
-#### 1. Pull the Pre-built Image
-
-```bash
-docker pull ghcr.io/sperekrestova/github-mcp-server:latest
-```
-
-#### 2. Run the Container
-
-```bash
-docker run -i --rm \
-  -e GITHUB_TOKEN=ghp_your_token_here \
-  ghcr.io/sperekrestova/github-mcp-server:latest
-```
-
 ### Building Docker Image Locally
 
 If you prefer to build the image yourself:
@@ -444,6 +438,10 @@ docker run -i --rm \
   -e GITHUB_TOKEN=ghp_your_token_here \
   github-mcp-server:local
 ```
+
+**Using local build with Claude Desktop:**
+
+Replace `ghcr.io/sperekrestova/github-mcp-server:latest` with `github-mcp-server:local` in your configuration.
 
 ### Docker Compose
 
@@ -463,54 +461,146 @@ docker-compose up -d
 docker-compose down
 ```
 
-### Claude Desktop Integration with Docker
+### Running Docker Manually
 
-#### Basic Configuration
+```bash
+# Run interactively
+docker run -i --rm \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  ghcr.io/sperekrestova/github-mcp-server:latest
 
-Add this to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "github-docs": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "GITHUB_TOKEN",
-        "ghcr.io/sperekrestova/github-mcp-server:latest"
-      ],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
-}
+# With additional environment variables
+docker run -i --rm \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  -e GITHUB_API_BASE_URL=https://api.github.com \
+  -e LOG_LEVEL=DEBUG \
+  ghcr.io/sperekrestova/github-mcp-server:latest
 ```
 
-#### Configuration with Auto-approve
+### Docker Image Details
 
-To avoid permission prompts for each tool call:
+- **Base**: Python 3.10 Alpine Linux
+- **Size**: ~50 MB (compressed)
+- **User**: Non-root `app` user
+- **Architectures**: linux/amd64, linux/arm64 (multi-platform)
+- **Security**: Minimal attack surface, no root access
+- **Updates**: Automatic builds on every release
+
+---
+
+## Integration Examples
+
+### Example 1: Documentation Inventory
+
+Create an inventory of all documentation across an organization using Claude Desktop with Docker:
+
+**Ask Claude:**
+*"Create a complete inventory of all documentation in the anthropics organization. For each repository with docs, list the number and types of documentation files."*
+
+Claude will use the Docker-deployed server to:
+1. Get all repos with `get_org_repos_tool`
+2. For each repo with docs, use `get_repo_docs_tool`
+3. Summarize the findings
+
+### Example 2: Search and Extract
+
+Find specific topics across all documentation:
+
+**Ask Claude:**
+*"Search for all documentation about streaming in the anthropics organization and summarize the key points from each file."*
+
+Claude will:
+1. Use `search_documentation_tool` to find relevant files
+2. Use `get_file_content_tool` to read each file
+3. Summarize the content
+
+### Example 3: Migration Planning
+
+**Ask Claude:**
+*"I need to migrate documentation from the anthropics organization. Create a migration plan showing which repos have docs, what formats they use, and estimate the total size."*
+
+---
+
+## Common Use Cases
+
+### 1. Finding API Documentation
+
+**Ask Claude:**
+*"Find all OpenAPI specification files in the anthropics organization"*
+
+The server will search for `.yml`, `.yaml`, and `.json` files and filter for OpenAPI specs.
+
+### 2. Reviewing README Files
+
+**Ask Claude:**
+*"Show me all README.md files from the /doc folders in anthropics repositories"*
+
+### 3. Tracking Documentation Coverage
+
+**Ask Claude:**
+*"Which repositories in the anthropics organization don't have documentation folders?"*
+
+### 4. Content Analysis
+
+**Ask Claude:**
+*"Analyze the documentation structure of the anthropic-sdk-python repository and suggest improvements"*
+
+---
+
+## Alternative Setup: Python (For Developers)
+
+**Use this method if:**
+- You're developing or modifying the server code
+- You don't have Docker installed
+- You prefer running Python directly
+- You need to debug or extend the codebase
+
+### Prerequisites
+
+1. Python 3.10 or higher
+2. GitHub personal access token
+3. Required Python packages (see `requirements.txt`)
+
+### Installation
+
+```bash
+# Clone or download the repository
+cd GitHub_MCP_Server
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env and add your GITHUB_TOKEN
+```
+
+### Running Locally
+
+```bash
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Run the server
+python main.py
+```
+
+### Claude Desktop Configuration (Python)
+
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "github-docs": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "GITHUB_TOKEN",
-        "-e", "GITHUB_API_BASE_URL",
-        "-e", "LOG_LEVEL",
-        "ghcr.io/sperekrestova/github-mcp-server:latest"
-      ],
+      "command": "python3",
+      "args": ["/absolute/path/to/GitHub_MCP_Server/main.py"],
       "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here",
-        "GITHUB_API_BASE_URL": "https://api.github.com",
-        "LOG_LEVEL": "INFO"
+        "GITHUB_TOKEN": "ghp_your_token_here"
       },
       "autoapprove": [
         "get_org_repos_tool",
@@ -523,47 +613,35 @@ To avoid permission prompts for each tool call:
 }
 ```
 
-#### Using Local Build
+**Important notes:**
+- Replace `/absolute/path/to/GitHub_MCP_Server/main.py` with the actual path on your system
+- Use `python3` or `python` depending on your system (verify with `which python3` or `which python`)
+- Ensure the virtual environment dependencies are installed before use
 
-If you built the image locally, update the image reference:
+### Testing (Python Development)
 
-```json
-{
-  "mcpServers": {
-    "github-docs": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "GITHUB_TOKEN",
-        "github-mcp-server:local"
-      ],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
-}
+```bash
+# Run test suite
+python test_all.py
+
+# Test specific functionality
+python -c "
+import asyncio
+from main import get_org_repos
+
+async def test():
+    repos = await get_org_repos('anthropics')
+    print(f'Found {len(repos)} repositories')
+
+asyncio.run(test())
+"
 ```
 
-### Docker Benefits
+---
 
-**Advantages of using Docker:**
-- ✅ No Python installation required
-- ✅ Consistent environment across all platforms (macOS, Windows, Linux)
-- ✅ Easy updates with `docker pull`
-- ✅ Isolated dependencies - no conflicts with system packages
-- ✅ Smaller attack surface - minimal Alpine-based image
-- ✅ Non-root user for security
+## Troubleshooting
 
-**Image Details:**
-- Base: Python 3.10 Alpine Linux
-- Size: ~50 MB (compressed)
-- User: Non-root `app` user
-- Architectures: linux/amd64, linux/arm64 (multi-platform)
-
-### Troubleshooting Docker
+### Docker Issues
 
 #### Permission Denied
 
@@ -611,211 +689,28 @@ docker run -i --rm \
 # Verify token is valid at https://github.com/settings/tokens
 ```
 
----
+### GitHub API Issues
 
-## Integration Examples
-
-### Claude Desktop Integration (Python)
-
-For users who prefer running Python directly instead of Docker:
-
-Add to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "github-docs": {
-      "command": "python3",
-      "args": ["/absolute/path/to/GitHub_MCP_Server/main.py"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      },
-      "autoapprove": [
-        "get_org_repos_tool",
-        "get_repo_docs_tool",
-        "get_file_content_tool",
-        "search_documentation_tool"
-      ]
-    }
-  }
-}
-```
-
-**Configuration file location:**
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
-**Important notes:**
-- Replace `/absolute/path/to/GitHub_MCP_Server/main.py` with the actual path on your system
-- Replace `ghp_your_token_here` with your GitHub personal access token
-- The `autoapprove` field allows Claude to use these tools without prompting for permission each time
-- Use `python3` or `python` depending on your system (verify with `which python3` or `which python`)
-- Ensure the virtual environment dependencies are installed before use (see Setup section)
-
-**Available tools for autoapproval:**
-- `get_org_repos_tool` - Fetch all repositories from an organization
-- `get_repo_docs_tool` - Get documentation files from a repository
-- `get_file_content_tool` - Fetch content of a specific file
-- `search_documentation_tool` - Search for documentation across repositories
-
-Then restart Claude Desktop and ask:
-- "What documentation exists in the anthropics organization?"
-- "Show me the authentication documentation from anthropic-sdk-python"
-- "Search for streaming examples in anthropics repos"
-- "Read the content of doc/README.md from the anthropic-sdk-python repository"
-
-### Python Integration
-
-```python
-import asyncio
-from main import get_org_repos, get_repo_docs, get_file_content
-
-async def main():
-    # Find repos with documentation
-    repos = await get_org_repos("anthropics")
-    repos_with_docs = [r for r in repos if r["hasDocFolder"]]
-
-    # Get documentation from first repo
-    if repos_with_docs:
-        repo_name = repos_with_docs[0]["name"]
-        docs = await get_repo_docs("anthropics", repo_name)
-
-        # Read first doc file
-        if docs:
-            content = await get_file_content(
-                "anthropics",
-                repo_name,
-                docs[0]["path"]
-            )
-            print(content["content"])
-
-asyncio.run(main())
-```
-
----
-
-## Common Use Cases
-
-### 1. Documentation Inventory
-
-Create an inventory of all documentation across an organization:
-
-```python
-import asyncio
-from main import get_org_repos, get_repo_docs
-
-async def inventory():
-    org = "anthropics"
-    repos = await get_org_repos(org)
-
-    inventory = {}
-    for repo in repos:
-        if repo["hasDocFolder"]:
-            docs = await get_repo_docs(org, repo["name"])
-            inventory[repo["name"]] = {
-                "url": repo["url"],
-                "doc_count": len(docs),
-                "docs": docs
-            }
-
-    return inventory
-
-result = asyncio.run(inventory())
-print(f"Total repos with docs: {len(result)}")
-```
-
-### 2. Search and Extract
-
-Search for specific topics and extract content:
-
-```python
-import asyncio
-from main import search_documentation, get_file_content
-
-async def search_and_extract(org, query):
-    # Search for files
-    results = await search_documentation(org, query)
-
-    # Extract content from each result
-    contents = []
-    for result in results:
-        content = await get_file_content(
-            org,
-            result["repository"],
-            result["path"]
-        )
-        contents.append({
-            "file": result["name"],
-            "repo": result["repository"],
-            "content": content["content"]
-        })
-
-    return contents
-
-results = asyncio.run(search_and_extract("anthropics", "streaming"))
-```
-
-### 3. Documentation Migration
-
-Extract documentation for migration to another system:
-
-```python
-import asyncio
-import os
-from main import get_org_repos, get_repo_docs, get_file_content
-
-async def migrate_docs(org, output_dir):
-    repos = await get_org_repos(org)
-
-    for repo in repos:
-        if not repo["hasDocFolder"]:
-            continue
-
-        # Create repo directory
-        repo_dir = os.path.join(output_dir, repo["name"])
-        os.makedirs(repo_dir, exist_ok=True)
-
-        # Get all docs
-        docs = await get_repo_docs(org, repo["name"])
-
-        # Download each doc
-        for doc in docs:
-            content = await get_file_content(org, repo["name"], doc["path"])
-
-            # Save to file
-            output_path = os.path.join(repo_dir, doc["name"])
-            with open(output_path, "w") as f:
-                f.write(content["content"])
-
-            print(f"Saved: {output_path}")
-
-asyncio.run(migrate_docs("anthropics", "./docs_backup"))
-```
-
----
-
-## Troubleshooting
-
-### Rate Limiting
+#### Rate Limiting
 
 **Problem:** "Search API rate limit exceeded"
 
 **Solution:**
-- Ensure `GITHUB_TOKEN` is set in `.env`
-- Authenticated requests have higher rate limits (5,000 vs 60 per hour)
+- Ensure `GITHUB_TOKEN` is set (authenticated requests have higher limits)
+- Authenticated: 5,000 requests/hour
+- Unauthenticated: 60 requests/hour
 - Wait for rate limit to reset (check headers: `X-RateLimit-Reset`)
 
-### Authentication Issues
+#### Authentication Issues
 
 **Problem:** "401 Unauthorized"
 
 **Solution:**
-- Check that `GITHUB_TOKEN` is correctly set in `.env`
+- Check that `GITHUB_TOKEN` is correctly set
 - Verify token hasn't expired: https://github.com/settings/tokens
 - Ensure token has required scopes: `repo`, `read:org`, `read:user`
 
-### Repository Not Found
+#### Repository Not Found
 
 **Problem:** "404 Not Found" when accessing repository
 
@@ -824,39 +719,58 @@ asyncio.run(migrate_docs("anthropics", "./docs_backup"))
 - Check if repository is private (requires token with `repo` scope)
 - Ensure repository exists and you have access
 
-### No Documentation Found
+### Claude Desktop Issues
 
-**Problem:** `get_repo_docs` returns empty list
+#### Server Not Connecting
 
-**Solution:**
-- Check if `/doc` folder exists in repository
-- Verify folder name is exactly `doc` (lowercase)
-- Ensure folder contains supported file types (`.md`, `.yml`, `.json`, etc.)
-
-### Content Decoding Errors
-
-**Problem:** "Failed to decode content"
+**Problem:** Claude Desktop can't connect to MCP server
 
 **Solution:**
-- This usually happens with binary files
-- Ensure you're only requesting text files (markdown, YAML, JSON)
-- Check file size - very large files may fail
+1. Verify configuration syntax in `claude_desktop_config.json`
+2. Check Docker is running: `docker ps`
+3. Test the server manually:
+   ```bash
+   docker run -i --rm -e GITHUB_TOKEN=xxx ghcr.io/sperekrestova/github-mcp-server:latest
+   ```
+4. Check Claude Desktop logs for error messages
+5. Restart Claude Desktop after configuration changes
+
+#### Tools Not Appearing
+
+**Problem:** GitHub MCP tools don't show up in Claude
+
+**Solution:**
+1. Ensure configuration is in the correct file location
+2. Restart Claude Desktop completely (quit and relaunch)
+3. Check for JSON syntax errors in config file
+4. Verify the server is listed in Claude's MCP servers list
 
 ---
 
 ## Performance Tips
 
-1. **Use Search API First**: For finding repos with /doc folders, the search API is much faster than listing all repos
-2. **Reuse Sessions**: The implementation reuses aiohttp sessions for better performance
-3. **Batch Operations**: When processing multiple repos, use asyncio to run operations concurrently
-4. **Cache Results**: Consider caching results to avoid repeated API calls
-5. **Rate Limit Awareness**: Monitor rate limit headers and implement backoff strategies for production use
+1. **Use Docker** - Faster startup and consistent performance
+2. **Reuse Sessions** - The implementation reuses aiohttp sessions for better performance
+3. **Batch Operations** - When processing multiple repos, operations run concurrently
+4. **Cache Results** - Consider caching results to avoid repeated API calls
+5. **Rate Limit Awareness** - Monitor rate limit headers and implement backoff strategies for production use
 
 ---
 
-## API Reference
+## Deployment Comparison
 
-For complete API documentation including function signatures, return types, and error handling, see the docstrings in `main.py`.
+| Feature | Docker (Recommended) | Python (Alternative) |
+|---------|---------------------|---------------------|
+| Setup complexity | ⭐ Simple | ⭐⭐⭐ Complex |
+| Python required | ❌ No | ✅ Yes (3.10+) |
+| Dependencies | ✅ Included | ⚠️ Manual install |
+| Updates | `docker pull` | `git pull` + `pip install` |
+| Isolation | ✅ Complete | ⚠️ Virtual env only |
+| Cross-platform | ✅ Identical | ⚠️ May vary |
+| For end users | ✅ Recommended | ❌ Not recommended |
+| For developers | ✅ Supported | ✅ Recommended |
+| Debugging | ⚠️ More complex | ✅ Easy |
+| Customization | ⚠️ Requires rebuild | ✅ Immediate |
 
 ---
 
@@ -865,6 +779,7 @@ For complete API documentation including function signatures, return types, and 
 - **Issues**: Report bugs or request features at the repository's issue tracker
 - **Documentation**: See `README.md` for setup and overview
 - **Examples**: Check `test_all.py` for working examples
+- **Docker Hub**: Pre-built images at `ghcr.io/sperekrestova/github-mcp-server`
 
 ---
 
