@@ -107,7 +107,69 @@ Get file content directly via URI.
 content://anthropics/anthropic-sdk-python/doc/README.md
 ```
 
-## Claude Desktop Integration
+## Docker Deployment
+
+### Using Pre-built Docker Image
+
+Pull the latest image from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/sperekrestova/github-mcp-server:latest
+```
+
+### Building Docker Image Locally
+
+```bash
+# Build the image
+docker build -t github-mcp-server .
+
+# Or use docker-compose
+docker-compose build
+```
+
+### Running with Docker
+
+```bash
+# Run interactively
+docker run -i --rm \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  ghcr.io/sperekrestova/github-mcp-server:latest
+
+# Or use docker-compose
+GITHUB_TOKEN=ghp_your_token_here docker-compose up
+```
+
+### Claude Desktop Integration with Docker
+
+Add this configuration to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+**Benefits of Docker deployment:**
+- No Python installation required
+- Consistent environment across platforms
+- Easy updates (`docker pull`)
+- Isolated dependencies
+
+## Claude Desktop Integration (Python)
 
 Add to your `claude_desktop_config.json`:
 
