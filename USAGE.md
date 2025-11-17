@@ -407,18 +407,80 @@ print(content)
 
 ---
 
-## Integration Examples
+## Docker Deployment
 
-### Claude Desktop Integration
+### Quick Start with Docker
 
-Add to your `claude_desktop_config.json`:
+The easiest way to use the GitHub MCP Server is with Docker - no Python installation required.
+
+#### 1. Pull the Pre-built Image
+
+```bash
+docker pull ghcr.io/sperekrestova/github-mcp-server:latest
+```
+
+#### 2. Run the Container
+
+```bash
+docker run -i --rm \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  ghcr.io/sperekrestova/github-mcp-server:latest
+```
+
+### Building Docker Image Locally
+
+If you prefer to build the image yourself:
+
+```bash
+# Clone the repository
+git clone https://github.com/SPerekrestova/GitHub_MCP_Server.git
+cd GitHub_MCP_Server
+
+# Build the image
+docker build -t github-mcp-server:local .
+
+# Run your local build
+docker run -i --rm \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  github-mcp-server:local
+```
+
+### Docker Compose
+
+For easier local development and testing:
+
+```bash
+# Create a .env file
+echo "GITHUB_TOKEN=ghp_your_token_here" > .env
+
+# Start the service
+docker-compose up
+
+# Or run in detached mode
+docker-compose up -d
+
+# Stop the service
+docker-compose down
+```
+
+### Claude Desktop Integration with Docker
+
+#### Basic Configuration
+
+Add this to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "github-docs": {
-      "command": "python",
-      "args": ["/absolute/path/to/GitHub_MCP_Server/main.py"],
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
       }
@@ -427,10 +489,175 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-**Location of config file:**
+#### Configuration with Auto-approve
+
+To avoid permission prompts for each tool call:
+
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "-e", "GITHUB_API_BASE_URL",
+        "-e", "LOG_LEVEL",
+        "ghcr.io/sperekrestova/github-mcp-server:latest"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here",
+        "GITHUB_API_BASE_URL": "https://api.github.com",
+        "LOG_LEVEL": "INFO"
+      },
+      "autoapprove": [
+        "get_org_repos_tool",
+        "get_repo_docs_tool",
+        "get_file_content_tool",
+        "search_documentation_tool"
+      ]
+    }
+  }
+}
+```
+
+#### Using Local Build
+
+If you built the image locally, update the image reference:
+
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "GITHUB_TOKEN",
+        "github-mcp-server:local"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+### Docker Benefits
+
+**Advantages of using Docker:**
+- ✅ No Python installation required
+- ✅ Consistent environment across all platforms (macOS, Windows, Linux)
+- ✅ Easy updates with `docker pull`
+- ✅ Isolated dependencies - no conflicts with system packages
+- ✅ Smaller attack surface - minimal Alpine-based image
+- ✅ Non-root user for security
+
+**Image Details:**
+- Base: Python 3.10 Alpine Linux
+- Size: ~50 MB (compressed)
+- User: Non-root `app` user
+- Architectures: linux/amd64, linux/arm64 (multi-platform)
+
+### Troubleshooting Docker
+
+#### Permission Denied
+
+**Problem:** "docker: permission denied"
+
+**Solution:**
+```bash
+# Add your user to the docker group (Linux)
+sudo usermod -aG docker $USER
+# Log out and back in for changes to take effect
+
+# Or use sudo (not recommended for production)
+sudo docker run ...
+```
+
+#### Image Pull Fails
+
+**Problem:** "Error pulling image"
+
+**Solution:**
+```bash
+# Check Docker is running
+docker ps
+
+# Try pulling explicitly
+docker pull ghcr.io/sperekrestova/github-mcp-server:latest
+
+# Check your internet connection and registry access
+```
+
+#### Container Exits Immediately
+
+**Problem:** Container starts then exits
+
+**Solution:**
+```bash
+# Check logs
+docker logs <container-id>
+
+# Ensure GITHUB_TOKEN is set
+docker run -i --rm \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  ghcr.io/sperekrestova/github-mcp-server:latest
+
+# Verify token is valid at https://github.com/settings/tokens
+```
+
+---
+
+## Integration Examples
+
+### Claude Desktop Integration (Python)
+
+For users who prefer running Python directly instead of Docker:
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "github-docs": {
+      "command": "python3",
+      "args": ["/absolute/path/to/GitHub_MCP_Server/main.py"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      },
+      "autoapprove": [
+        "get_org_repos_tool",
+        "get_repo_docs_tool",
+        "get_file_content_tool",
+        "search_documentation_tool"
+      ]
+    }
+  }
+}
+```
+
+**Configuration file location:**
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+**Important notes:**
+- Replace `/absolute/path/to/GitHub_MCP_Server/main.py` with the actual path on your system
+- Replace `ghp_your_token_here` with your GitHub personal access token
+- The `autoapprove` field allows Claude to use these tools without prompting for permission each time
+- Use `python3` or `python` depending on your system (verify with `which python3` or `which python`)
+- Ensure the virtual environment dependencies are installed before use (see Setup section)
+
+**Available tools for autoapproval:**
+- `get_org_repos_tool` - Fetch all repositories from an organization
+- `get_repo_docs_tool` - Get documentation files from a repository
+- `get_file_content_tool` - Fetch content of a specific file
+- `search_documentation_tool` - Search for documentation across repositories
 
 Then restart Claude Desktop and ask:
 - "What documentation exists in the anthropics organization?"
