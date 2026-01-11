@@ -1,3 +1,12 @@
+---
+title: GitHub MCP Server
+emoji: 🐙
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+---
+
 # GitHub MCP Server
 
 Model Context Protocol server for accessing GitHub documentation via API.

@@ -12,6 +12,7 @@ from typing import List, Dict, Any
 import aiohttp
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from starlette.middleware.cors import CORSMiddleware
 
 # Load environment variables from .env file
 load_dotenv()
@@ -638,14 +639,37 @@ async def content_resource(org: str, repo: str, path: str) -> str:
 
 
 # ============================================================================
+# ASGI Application (for HTTP/remote deployment)
+# ============================================================================
+
+# Create ASGI application
+app = mcp.streamable_http_app()
+
+# Add CORS middleware for remote access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins; restrict in production if needed
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["mcp-session-id", "mcp-protocol-version"],
+    max_age=86400,
+)
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
 if __name__ == "__main__":
-    # Run the MCP server
+    import uvicorn
+
     logger.info("=" * 60)
-    logger.info("Starting GitHub MCP Server...")
+    logger.info("Starting GitHub MCP Server (HTTP Mode)...")
     logger.info("=" * 60)
     logger.info(f" Token configured: {'Yes' if GITHUB_TOKEN else 'No'}")
+    logger.info(f" Port: {MCP_SERVER_PORT}")
+    logger.info(f" MCP endpoint: /mcp/")
+    logger.info("=" * 60)
 
-    mcp.run()
+    uvicorn.run(app, host="0.0.0.0", port=MCP_SERVER_PORT)
