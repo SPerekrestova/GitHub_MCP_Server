@@ -643,7 +643,7 @@ async def content_resource(org: str, repo: str, path: str) -> str:
 # ============================================================================
 
 # Create ASGI application
-app = mcp.streamable_http_app()
+app = mcp.http_app()
 
 # Add CORS middleware for remote access
 app.add_middleware(
