@@ -10,8 +10,11 @@ import os
 from typing import List, Dict, Any
 
 import aiohttp
+import gradio as gr
 from dotenv import load_dotenv
+from fastapi import FastAPI
 from fastmcp import FastMCP
+from starlette.middleware.cors import CORSMiddleware
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,7 +32,11 @@ mcp = FastMCP("GitHub Knowledge Vault MCP Server")
 # Configuration
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
-MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "8000"))
+MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "8003"))
+
+# API Constants
+RESULTS_PER_PAGE = 100
+SEARCH_RESULTS_LIMIT = 50
 
 # Validate configuration
 if not GITHUB_TOKEN:
@@ -40,7 +47,7 @@ if not GITHUB_TOKEN:
 # Helper Functions
 # ============================================================================
 
-async def create_headers() -> Dict[str, str]:
+def create_headers() -> Dict[str, str]:
     """
     Create GitHub API request headers with authentication
 
@@ -75,13 +82,14 @@ async def check_doc_folder(
     Returns:
         True if /doc folder exists, False otherwise
     """
-    headers = await create_headers()
+    headers = create_headers()
     url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/contents/doc"
 
     try:
         async with session.get(url, headers=headers) as response:
             return response.status == 200
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Error checking /doc folder for {org}/{repo}: {e}")
         return False
 
 
@@ -105,10 +113,9 @@ def determine_content_type(filename: str) -> str:
         return 'svg'
     elif lower_name.endswith(('.yml', '.yaml')):
         return 'openapi'
-    elif lower_name.startswith('postman') and lower_name.endswith('.json'):
-        return 'postman'
     elif lower_name.endswith('.json'):
-        return 'openapi'  # Assume OpenAPI JSON
+        # Check if it's a Postman collection first, otherwise assume OpenAPI
+        return 'postman' if lower_name.startswith('postman') else 'openapi'
     else:
         return 'unknown'
 
@@ -145,13 +152,13 @@ async def get_org_repos(org: str) -> List[Dict[str, Any]]:
         repos = await get_org_repos("anthropics")
     """
     async with aiohttp.ClientSession() as session:
-        headers = await create_headers()
+        headers = create_headers()
 
         # Strategy 1: Use GitHub Search API (efficient - one request)
         search_url = f"{GITHUB_API_BASE}/search/code"
         params = {
             "q": f"org:{org} path:/doc",
-            "per_page": 100
+            "per_page": RESULTS_PER_PAGE
         }
 
         try:
@@ -191,7 +198,7 @@ async def get_org_repos(org: str) -> List[Dict[str, Any]]:
             async with session.get(
                 repos_url,
                 headers=headers,
-                params={"per_page": 100, "page": page, "sort": "updated"}
+                params={"per_page": RESULTS_PER_PAGE, "page": page, "sort": "updated"}
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -205,8 +212,8 @@ async def get_org_repos(org: str) -> List[Dict[str, Any]]:
                 logger.info(f"Fetched page {page} ({len(repos)} repos)")
                 page += 1
 
-                # Stop if we got less than 100 (last page)
-                if len(repos) < 100:
+                # Stop if we got less than full page (last page)
+                if len(repos) < RESULTS_PER_PAGE:
                     break
 
         logger.info(f"Total repos fetched: {len(all_repos)}")
@@ -261,7 +268,7 @@ async def get_repo_docs(org: str, repo: str) -> List[Dict[str, Any]]:
         docs = await get_repo_docs("anthropics", "anthropic-sdk-python")
     """
     async with aiohttp.ClientSession() as session:
-        headers = await create_headers()
+        headers = create_headers()
         url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/contents/doc"
 
         logger.info(f"Fetching docs from: {org}/{repo}/doc")
@@ -343,7 +350,7 @@ async def get_file_content(org: str, repo: str, path: str) -> Dict[str, Any]:
         content = await get_file_content("anthropics", "sdk", "doc/README.md")
     """
     async with aiohttp.ClientSession() as session:
-        headers = await create_headers()
+        headers = create_headers()
         url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/contents/{path}"
 
         logger.info(f"Fetching content: {org}/{repo}/{path}")
@@ -407,11 +414,11 @@ async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
         results = await search_documentation("anthropics", "streaming")
     """
     async with aiohttp.ClientSession() as session:
-        headers = await create_headers()
+        headers = create_headers()
         search_url = f"{GITHUB_API_BASE}/search/code"
         params = {
             "q": f"org:{org} path:/doc {query}",
-            "per_page": 50
+            "per_page": SEARCH_RESULTS_LIMIT
         }
 
         logger.info(f"Searching for: '{query}' in {org}")
@@ -448,30 +455,10 @@ async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
 @mcp.tool()
 async def get_org_repos_tool(org: str) -> List[Dict[str, Any]]:
     """
-    Fetch all repositories from a GitHub organization
-
-    This tool uses the GitHub Search API to efficiently find repositories
-    that have a /doc folder, falling back to checking each repo individually
-    if the search API is unavailable.
+    Fetch all repositories from a GitHub organization, detecting /doc folders
 
     Args:
         org: GitHub organization name (e.g., "microsoft", "google")
-
-    Returns:
-        List of repository dictionaries with structure:
-        [
-            {
-                "id": "123456",
-                "name": "repo-name",
-                "description": "Repository description",
-                "url": "https://github.com/org/repo",
-                "hasDocFolder": true
-            },
-            ...
-        ]
-
-    Example:
-        repos = await get_org_repos("anthropics")
     """
     return await get_org_repos(org)
 
@@ -481,30 +468,9 @@ async def get_repo_docs_tool(org: str, repo: str) -> List[Dict[str, Any]]:
     """
     Get all documentation files from a repository's /doc folder
 
-    Filters for supported file types: Markdown, Mermaid, SVG, OpenAPI, Postman
-
     Args:
         org: GitHub organization name
         repo: Repository name
-
-    Returns:
-        List of documentation file dictionaries:
-        [
-            {
-                "id": "abc123...",
-                "name": "README.md",
-                "path": "doc/README.md",
-                "type": "markdown",
-                "size": 1234,
-                "url": "https://github.com/org/repo/blob/main/doc/README.md",
-                "download_url": "https://raw.githubusercontent.com/.../README.md",
-                "sha": "abc123..."
-            },
-            ...
-        ]
-
-    Example:
-        docs = await get_repo_docs("anthropics", "anthropic-sdk-python")
     """
     return await get_repo_docs(org, repo)
 
@@ -512,28 +478,12 @@ async def get_repo_docs_tool(org: str, repo: str) -> List[Dict[str, Any]]:
 @mcp.tool()
 async def get_file_content_tool(org: str, repo: str, path: str) -> Dict[str, Any]:
     """
-    Fetch content of a specific file from GitHub
-
-    Decodes base64-encoded content returned by GitHub API
+    Fetch and decode content of a specific file from GitHub
 
     Args:
         org: GitHub organization name
         repo: Repository name
         path: File path within repository (e.g., "doc/README.md")
-
-    Returns:
-        Dictionary with file metadata and content:
-        {
-            "name": "README.md",
-            "path": "doc/README.md",
-            "content": "# Documentation\\n\\nThis is...",
-            "size": 1234,
-            "sha": "abc123...",
-            "encoding": "base64"
-        }
-
-    Example:
-        content = await get_file_content("anthropics", "sdk", "doc/README.md")
     """
     return await get_file_content(org, repo, path)
 
@@ -543,27 +493,9 @@ async def search_documentation_tool(org: str, query: str) -> List[Dict[str, Any]
     """
     Search for documentation files across all repositories in an organization
 
-    Uses GitHub Code Search API to find matching files in /doc folders
-
     Args:
         org: GitHub organization name
         query: Search query string (e.g., "authentication", "API", "tutorial")
-
-    Returns:
-        List of search result dictionaries:
-        [
-            {
-                "name": "authentication.md",
-                "path": "doc/authentication.md",
-                "repository": "repo-name",
-                "url": "https://github.com/org/repo/blob/main/doc/auth.md",
-                "sha": "abc123..."
-            },
-            ...
-        ]
-
-    Example:
-        results = await search_documentation("anthropics", "streaming")
     """
     return await search_documentation(org, query)
 
@@ -638,14 +570,173 @@ async def content_resource(org: str, repo: str, path: str) -> str:
 
 
 # ============================================================================
+# ASGI Application (for HTTP/remote deployment)
+# ============================================================================
+
+# Create MCP ASGI application
+mcp_app = mcp.http_app()
+
+# Create main FastAPI app
+main_app = FastAPI(title="GitHub MCP Server")
+
+# Create Gradio Interface
+def create_gradio_interface():
+    """Create Gradio interface to display MCP server information"""
+
+    async def get_server_info():
+        """Get server status and information"""
+        # Get tools using await (Gradio supports async functions)
+        tools_dict = await mcp.get_tools()
+        tools_list = list(tools_dict.values())
+
+        # Build tools information
+        tools_info = f"## 🛠️ Available MCP Tools ({len(tools_list)})\n\n"
+        for tool in tools_list:
+            tools_info += f"### {tool.name}\n"
+            tools_info += f"{tool.description or 'No description available'}\n\n"
+
+            if hasattr(tool, 'parameters') and tool.parameters:
+                if hasattr(tool.parameters, 'properties'):
+                    params = list(tool.parameters.properties.keys())
+                    tools_info += f"**Parameters:** {', '.join(f'`{p}`' for p in params)}\n\n"
+
+        return tools_info
+
+    async def check_mcp_status():
+        """Check if MCP endpoint is responding"""
+        try:
+            # Try to get tools to verify MCP server is working
+            tools_dict = await mcp.get_tools()
+            tool_count = len(tools_dict)
+            return f"✅ MCP Server is running and responding\n✅ {tool_count} tools available at `/mcp` endpoint"
+        except Exception as e:
+            return f"❌ MCP Server error: {str(e)}"
+
+    with gr.Blocks(title="GitHub MCP Server") as demo:
+        demo.theme = gr.themes.Soft()
+        gr.Markdown(
+            """
+            # 🐙 GitHub MCP Server
+
+            Model Context Protocol server for accessing GitHub documentation via API.
+            """
+        )
+
+        with gr.Tab("📡 MCP Endpoint"):
+            gr.Markdown(
+                """
+                ### Connection Information
+
+                **Endpoint:** `/mcp`
+                **Protocol:** MCP over HTTP (Streamable HTTP)
+                **Status:** Active
+
+                ### How to Connect
+
+                **Claude Desktop (Pro/Max/Team):**
+                1. Open Settings → Connectors → Add Custom Integration
+                2. Enter this Space's URL + `/mcp`
+                3. Example: `https://your-username-space-name.hf.space/mcp`
+
+                **Claude Desktop (Free tier):**
+                Use `mcp-remote` proxy in your `claude_desktop_config.json`:
+                ```json
+                {
+                  "mcpServers": {
+                    "github-docs-remote": {
+                      "command": "npx",
+                      "args": ["-y", "mcp-remote", "https://your-space-url.hf.space/mcp"]
+                    }
+                  }
+                }
+                ```
+                """
+            )
+
+            status_btn = gr.Button("Check MCP Status", variant="primary")
+            status_output = gr.Textbox(label="Status", interactive=False)
+            status_btn.click(check_mcp_status, outputs=status_output)
+
+        with gr.Tab("🛠️ Available Tools"):
+            gr.Markdown("View all available MCP tools and their parameters.")
+
+            tools_btn = gr.Button("Load Tools", variant="primary")
+            tools_output = gr.Markdown()
+            tools_btn.click(get_server_info, outputs=tools_output)
+
+        with gr.Tab("📚 Resources"):
+            gr.Markdown(
+                """
+                ### MCP Resources
+
+                This server provides MCP resources for accessing documentation:
+
+                - `documentation://{org}/{repo}` - List documentation files in a repository
+                - `content://{org}/{repo}/{path}` - Get content of a specific file
+
+                ### Supported File Types
+
+                - Markdown (`.md`)
+                - Mermaid diagrams (`.mmd`, `.mermaid`)
+                - SVG images (`.svg`)
+                - OpenAPI specs (`.yml`, `.yaml`, `.json`)
+                - Postman collections (`.json`)
+                """
+            )
+
+        with gr.Tab("ℹ️ About"):
+            gr.Markdown(
+                f"""
+                ### Server Information
+
+                **GitHub Token:** {'✅ Configured' if GITHUB_TOKEN else '❌ Not configured'}
+                **Port:** {MCP_SERVER_PORT}
+                **API Base:** {GITHUB_API_BASE}
+
+                ### Links
+
+                - [FastMCP Documentation](https://github.com/jlowin/fastmcp)
+                - [MCP Protocol Specification](https://modelcontextprotocol.io)
+                - [Source Code](https://github.com/SPerekrestova/GitHub_MCP_Server)
+                """
+            )
+
+    return demo
+
+main_app.mount("/mcp", mcp_app)
+
+@main_app.get("/health")
+def health():
+    return {"status": "ok"}
+
+gradio_blocks = create_gradio_interface()
+app = gr.mount_gradio_app(main_app, gradio_blocks, path="/")
+
+# Add CORS middleware for remote access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins; restrict in production if needed
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["mcp-session-id", "mcp-protocol-version"],
+    max_age=86400,
+)
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
 if __name__ == "__main__":
-    # Run the MCP server
+    import uvicorn
+
     logger.info("=" * 60)
     logger.info("Starting GitHub MCP Server...")
     logger.info("=" * 60)
     logger.info(f" Token configured: {'Yes' if GITHUB_TOKEN else 'No'}")
+    logger.info(f" Port: {MCP_SERVER_PORT}")
+    logger.info(f" MCP endpoint: /mcp/")
+    logger.info("=" * 60)
 
-    mcp.run()
+    uvicorn.run(app, host="0.0.0.0", port=MCP_SERVER_PORT)
