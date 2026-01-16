@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8003"))
@@ -538,17 +540,6 @@ async def content_resource(org: str, repo: str, path: str) -> str:
     file_data = await get_file_content(org, repo, path)
     return file_data["content"]
 
-
-# ============================================================================
-# ASGI Application (for HTTP/remote deployment)
-# ============================================================================
-
-# Create MCP ASGI application
-mcp_app = mcp.http_app(path="/mcp")
-
-# Create main FastAPI app
-main_app = FastAPI(title="GitHub MCP Server")
-
 # Create Gradio Interface
 def create_gradio_interface():
     """Create Gradio interface to display MCP server information"""
@@ -673,25 +664,13 @@ def create_gradio_interface():
 
     return demo
 
-main_app.mount("/mcp", mcp_app)
+# Add health check endpoint
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> PlainTextResponse:
+    return PlainTextResponse("OK")
 
-@main_app.get("/health")
-def health():
-    return {"status": "ok"}
-
+# Create Gradio blocks
 gradio_blocks = create_gradio_interface()
-app = gr.mount_gradio_app(main_app, gradio_blocks, path="/")
-
-# Add CORS middleware for remote access
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["mcp-session-id", "mcp-protocol-version"],
-    max_age=86400,
-)
 
 
 # ============================================================================
@@ -701,10 +680,13 @@ app.add_middleware(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "main:app",
-        host=SERVER_HOST,
-        port=SERVER_PORT,
-        reload=False,
-        log_level=LOG_LEVEL.lower(),
-    )
+    #gradio_blocks.launch(share=True)
+    mcp.run()
+
+    # uvicorn.run(
+    #     "main:app",
+    #     host=SERVER_HOST,
+    #     port=SERVER_PORT,
+    #     reload=False,
+    #     log_level=LOG_LEVEL.lower(),
+    # )
