@@ -2,147 +2,57 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Overview
+## Project Overview
 
-GitHub MCP Server is a Model Context Protocol (MCP) server that provides access to GitHub documentation via the GitHub API. It's built with FastMCP and runs as a stdio-based MCP server, designed to be integrated with Claude Desktop or other MCP clients.
+GitHub MCP Server - A Model Context Protocol (MCP) server that provides GitHub API access for fetching and searching documentation in `/doc` folders across GitHub organizations. Built with FastMCP.
 
 ## Development Commands
 
-### Environment Setup
-
 ```bash
-# Create and activate virtual environment
+# Setup
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
+source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env  # Add GITHUB_TOKEN
 
-# Configure environment
-cp .env.example .env
-# Edit .env and add your GITHUB_TOKEN
-```
-
-### Running the Server
-
-```bash
-# Run directly with Python (stdio mode for MCP)
+# Run locally (stdio transport for Claude Desktop)
 python main.py
 
-# Run with Docker
-docker build -t github-mcp-server:local .
-docker run -i --rm -e GITHUB_TOKEN='your_token' github-mcp-server:local
-
-# Run with docker-compose
-docker-compose build
-docker-compose up
+# Run with HTTP transport (for Hugging Face Spaces)
+# Set MCP_HTTP_TRANSPORT=true or modify main.py to use mcp.run(transport="http")
 ```
-
-### Docker Build Performance
-
-The Dockerfile is optimized for fast rebuilds (10-20x faster):
-- Uses BuildKit for layer caching
-- Separates dependency installation from code copying
-- Enable BuildKit: `export DOCKER_BUILDKIT=1`
 
 ## Architecture
 
-### Single-File Architecture
+**Single-file MCP server** (`main.py`) using FastMCP framework:
 
-The entire server is implemented in `main.py` (~650 lines) with a clear functional organization:
+1. **MCP Tools** (decorated with `@mcp.tool()`):
+   - `get_org_repos_tool` - List repos with `/doc` folder detection (uses Search API first, falls back to listing all)
+   - `get_repo_docs_tool` - Get documentation files from repo's `/doc` folder
+   - `get_file_content_tool` - Fetch and decode file content (handles base64)
+   - `search_documentation_tool` - Search docs across org using GitHub Code Search API
 
-1. **Configuration & Setup** (lines 1-37): Environment loading, logging, MCP initialization
-2. **Helper Functions** (lines 39-114): GitHub API headers, /doc folder detection, content type determination
-3. **Business Logic Functions** (lines 116-442): Core async functions that implement GitHub API interactions
-4. **MCP Tools Registration** (lines 444-569): Decorated wrappers that expose business logic as MCP tools
-5. **MCP Resources** (lines 571-638): URI-based resource handlers for documentation access
-6. **Main Entry Point** (lines 640-652): Server startup
+2. **MCP Resources** (decorated with `@mcp.resource()`):
+   - `documentation://{org}/{repo}` - List docs
+   - `content://{org}/{repo}/{path}` - Get file content
 
-### Key Design Patterns
+3. **Business Logic Functions** (async, testable):
+   - `get_org_repos()`, `get_repo_docs()`, `get_file_content()`, `search_documentation()`
+   - Each tool is a thin wrapper calling these functions
 
-**Separation of Concerns**: Business logic functions (e.g., `get_org_repos()`) are separate from MCP tool decorators (e.g., `get_org_repos_tool()`). This allows the core logic to be testable independently of MCP.
+## Key Implementation Details
 
-**Async/Await Throughout**: All GitHub API interactions use `aiohttp` for async HTTP requests. Functions reuse `ClientSession` objects for connection pooling.
+- **GitHub API strategy**: Search API first for efficiency, fallback to paginated list + check each repo
+- **Supported doc types**: `.md`, `.mmd`, `.mermaid`, `.svg`, `.yml`, `.yaml`, `.json`
+- **Content decoding**: Base64 content from GitHub API is automatically decoded
+- **Health check**: `/health` endpoint available via `@mcp.custom_route()`
 
-**Two-Strategy Approach**: `get_org_repos()` tries GitHub Search API first (efficient, one request), then falls back to listing all repos individually if search fails.
+## Environment Variables
 
-**Base64 Decoding**: GitHub API returns file content as base64-encoded strings. The `get_file_content()` function automatically decodes this to UTF-8 text.
-
-## MCP Integration
-
-### Tools (4 total)
-
-- `get_org_repos_tool(org)` - Lists repositories with /doc folder detection
-- `get_repo_docs_tool(org, repo)` - Lists documentation files in a repo's /doc folder
-- `get_file_content_tool(org, repo, path)` - Fetches and decodes file content
-- `search_documentation_tool(org, query)` - Searches docs across repos using GitHub Code Search API
-
-### Resources (2 patterns)
-
-- `documentation://{org}/{repo}` - Lists documentation files in formatted text
-- `content://{org}/{repo}/{path}` - Returns raw file content
-
-### Environment Variables
-
-Required:
-- `GITHUB_TOKEN` - GitHub personal access token (scopes: `repo`, `read:org`, `read:user`)
-
-Optional:
+- `GITHUB_TOKEN` - Required for API access (scopes: `repo`, `read:org`, `read:user`)
 - `GITHUB_API_BASE_URL` - Default: `https://api.github.com`
 - `LOG_LEVEL` - Default: `INFO`
-- `MCP_SERVER_PORT` - Default: `8000` (note: not used in stdio mode)
 
-## Supported File Types
+## CI/CD
 
-The server filters for specific documentation file types in /doc folders:
-- Markdown: `.md`
-- Mermaid diagrams: `.mmd`, `.mermaid`
-- SVG images: `.svg`
-- OpenAPI specs: `.yml`, `.yaml`, `.json`
-- Postman collections: `.json` (filename must start with "postman")
-
-## Error Handling
-
-- 404 responses return empty lists or specific error messages
-- Rate limiting (403 from Search API) returns user-facing error message
-- All GitHub API errors include status code and response text
-- Missing GITHUB_TOKEN triggers warning but allows unauthenticated requests (with rate limits)
-
-## Claude Desktop Configuration
-
-Add to `claude_desktop_config.json`:
-
-**Docker deployment:**
-```json
-{
-  "mcpServers": {
-    "github-docs": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "GITHUB_TOKEN", "ghcr.io/sperekrestova/github-mcp-server:latest"],
-      "env": {"GITHUB_TOKEN": "ghp_your_token_here"}
-    }
-  }
-}
-```
-
-**Python deployment:**
-```json
-{
-  "mcpServers": {
-    "github-docs": {
-      "command": "python3",
-      "args": ["/absolute/path/to/main.py"],
-      "env": {"GITHUB_TOKEN": "ghp_your_token_here"}
-    }
-  }
-}
-```
-
-## Testing Approach
-
-Currently no test suite exists. When adding tests:
-- Test business logic functions separately from MCP tool wrappers
-- Mock `aiohttp.ClientSession` for GitHub API interactions
-- Test base64 decoding edge cases in `get_file_content()`
-- Test /doc folder detection logic
-- Test file type filtering against supported extensions
+Docker image published to `ghcr.io/sperekrestova/github-mcp-server` on push to main or version tags. Multi-platform build (amd64/arm64).

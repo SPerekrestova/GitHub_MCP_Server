@@ -10,14 +10,11 @@ import os
 from typing import List, Dict, Any
 
 import aiohttp
-import gradio as gr
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-SERVER_PORT = int(os.getenv("SERVER_PORT", "8003"))
-SERVER_HOST = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "random")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
 
@@ -537,137 +534,10 @@ async def content_resource(org: str, repo: str, path: str) -> str:
     file_data = await get_file_content(org, repo, path)
     return file_data["content"]
 
-# Create Gradio Interface
-def create_gradio_interface():
-    """Create Gradio interface to display MCP server information"""
-
-    async def get_server_info():
-        """Get server status and information"""
-        # Get tools using await (Gradio supports async functions)
-        tools_dict = await mcp.get_tools()
-        tools_list = list(tools_dict.values())
-
-        # Build tools information
-        tools_info = f"## 🛠️ Available MCP Tools ({len(tools_list)})\n\n"
-        for tool in tools_list:
-            tools_info += f"### {tool.name}\n"
-            tools_info += f"{tool.description or 'No description available'}\n\n"
-
-            if hasattr(tool, 'parameters') and tool.parameters:
-                if hasattr(tool.parameters, 'properties'):
-                    params = list(tool.parameters.properties.keys())
-                    tools_info += f"**Parameters:** {', '.join(f'`{p}`' for p in params)}\n\n"
-
-        return tools_info
-
-    async def check_mcp_status():
-        """Check if MCP endpoint is responding"""
-        try:
-            # Try to get tools to verify MCP server is working
-            tools_dict = await mcp.get_tools()
-            tool_count = len(tools_dict)
-            return f"✅ MCP Server is running and responding\n✅ {tool_count} tools available at `/mcp` endpoint"
-        except Exception as e:
-            return f"❌ MCP Server error: {str(e)}"
-
-    with gr.Blocks(title="GitHub MCP Server") as demo:
-        demo.theme = gr.themes.Soft()
-        gr.Markdown(
-            """
-            # 🐙 GitHub MCP Server
-
-            Model Context Protocol server for accessing GitHub documentation via API.
-            """
-        )
-
-        with gr.Tab("📡 MCP Endpoint"):
-            gr.Markdown(
-                """
-                ### Connection Information
-
-                **Endpoint:** `/mcp`
-                **Protocol:** MCP over HTTP (Streamable HTTP)
-                **Status:** Active
-
-                ### How to Connect
-
-                **Claude Desktop (Pro/Max/Team):**
-                1. Open Settings → Connectors → Add Custom Integration
-                2. Enter this Space's URL + `/mcp`
-                3. Example: `https://your-username-space-name.hf.space/mcp`
-
-                **Claude Desktop (Free tier):**
-                Use `mcp-remote` proxy in your `claude_desktop_config.json`:
-                ```json
-                {
-                  "mcpServers": {
-                    "github-docs-remote": {
-                      "command": "npx",
-                      "args": ["-y", "mcp-remote", "https://your-space-url.hf.space/mcp"]
-                    }
-                  }
-                }
-                ```
-                """
-            )
-
-            status_btn = gr.Button("Check MCP Status", variant="primary")
-            status_output = gr.Textbox(label="Status", interactive=False)
-            status_btn.click(check_mcp_status, outputs=status_output)
-
-        with gr.Tab("🛠️ Available Tools"):
-            gr.Markdown("View all available MCP tools and their parameters.")
-
-            tools_btn = gr.Button("Load Tools", variant="primary")
-            tools_output = gr.Markdown()
-            tools_btn.click(get_server_info, outputs=tools_output)
-
-        with gr.Tab("📚 Resources"):
-            gr.Markdown(
-                """
-                ### MCP Resources
-
-                This server provides MCP resources for accessing documentation:
-
-                - `documentation://{org}/{repo}` - List documentation files in a repository
-                - `content://{org}/{repo}/{path}` - Get content of a specific file
-
-                ### Supported File Types
-
-                - Markdown (`.md`)
-                - Mermaid diagrams (`.mmd`, `.mermaid`)
-                - SVG images (`.svg`)
-                - OpenAPI specs (`.yml`, `.yaml`, `.json`)
-                - Postman collections (`.json`)
-                """
-            )
-
-        with gr.Tab("ℹ️ About"):
-            gr.Markdown(
-                f"""
-                ### Server Information
-
-                **GitHub Token:** {'✅ Configured' if GITHUB_TOKEN else '❌ Not configured'}
-                **Port:** {SERVER_PORT}
-                **API Base:** {GITHUB_API_BASE}
-
-                ### Links
-
-                - [FastMCP Documentation](https://github.com/jlowin/fastmcp)
-                - [MCP Protocol Specification](https://modelcontextprotocol.io)
-                - [Source Code](https://github.com/SPerekrestova/GitHub_MCP_Server)
-                """
-            )
-
-    return demo
-
 # Add health check endpoint
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> PlainTextResponse:
     return PlainTextResponse("OK")
-
-# Create Gradio blocks
-gradio_blocks = create_gradio_interface()
 
 
 # ============================================================================
@@ -675,5 +545,4 @@ gradio_blocks = create_gradio_interface()
 # ============================================================================
 
 if __name__ == "__main__":
-    #gradio_blocks.launch(share=True)
     mcp.run()
