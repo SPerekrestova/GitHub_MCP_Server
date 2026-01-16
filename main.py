@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
 GitHub MCP Server
-Provides GitHub API access via Model Context Protocol
+Provides GitHub API access via Model Context Protocol using Gradio
 """
 
 import base64
+import json
 import logging
 import os
 from typing import List, Dict, Any
 
 import aiohttp
-from fastmcp import FastMCP
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+import gradio as gr
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "random")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
 
 logging.basicConfig(
@@ -23,9 +22,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# Initialize MCP server with a descriptive name
-mcp = FastMCP("GitHub Knowledge Vault MCP Server")
 
 # API Constants
 RESULTS_PER_PAGE = 100
@@ -378,166 +374,144 @@ async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
 
 
 # ============================================================================
-# MCP Tools Registration
+# Gradio MCP Tool Functions
 # ============================================================================
 
-@mcp.tool()
-async def get_org_repos_tool(org: str) -> List[Dict[str, Any]]:
+async def get_org_repos_tool(org: str) -> str:
     """
-    Fetch all repositories from a GitHub organization
+    Fetch all repositories from a GitHub organization with /doc folder detection.
 
     This tool uses the GitHub Search API to efficiently find repositories
     that have a /doc folder, falling back to checking each repo individually
     if the search API is unavailable.
 
     Args:
-        org: GitHub organization name (e.g., "microsoft", "google")
+        org (str): GitHub organization name (e.g., "microsoft", "anthropics")
 
     Returns:
-        List of repository dictionaries with structure:
-        [
-            {
-                "id": "123456",
-                "name": "repo-name",
-                "description": "Repository description",
-                "url": "https://github.com/org/repo",
-                "hasDocFolder": true
-            },
-            ...
-        ]
-
-    Example:
-        repos = await get_org_repos("anthropics")
+        str: JSON string containing list of repositories with their metadata
     """
-    return await get_org_repos(org)
+    try:
+        result = await get_org_repos(org)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
-@mcp.tool()
-async def get_repo_docs_tool(org: str, repo: str) -> List[Dict[str, Any]]:
+async def get_repo_docs_tool(org: str, repo: str) -> str:
     """
-    Get all documentation files from a repository's /doc folder
+    Get all documentation files from a repository's /doc folder.
+
+    Filters for supported file types: Markdown, Mermaid, SVG, OpenAPI, Postman.
 
     Args:
-        org: GitHub organization name
-        repo: Repository name
-    """
-    return await get_repo_docs(org, repo)
-
-
-@mcp.tool()
-async def get_file_content_tool(org: str, repo: str, path: str) -> Dict[str, Any]:
-    """
-    Fetch and decode content of a specific file from GitHub
-
-    Args:
-        org: GitHub organization name
-        repo: Repository name
-        path: File path within repository (e.g., "doc/README.md")
-    """
-    return await get_file_content(org, repo, path)
-
-
-@mcp.tool()
-async def search_documentation_tool(org: str, query: str) -> List[Dict[str, Any]]:
-    """
-    Search for documentation files across all repositories in an organization
-
-    Uses GitHub Code Search API to find matching files in /doc folders
-
-    Args:
-        org: GitHub organization name
-        query: Search query string (e.g., "authentication", "API", "tutorial")
+        org (str): GitHub organization name
+        repo (str): Repository name
 
     Returns:
-        List of search result dictionaries:
-        [
-            {
-                "name": "authentication.md",
-                "path": "doc/authentication.md",
-                "repository": "repo-name",
-                "url": "https://github.com/org/repo/blob/main/doc/auth.md",
-            },
-            ...
-        ]
-
-    Example:
-        results = await search_documentation("anthropics", "streaming")
+        str: JSON string containing list of documentation files with metadata
     """
-    return await search_documentation(org, query)
+    try:
+        result = await get_repo_docs(org, repo)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+async def get_file_content_tool(org: str, repo: str, path: str) -> str:
+    """
+    Fetch and decode content of a specific file from GitHub.
+
+    Automatically decodes base64-encoded content returned by GitHub API.
+
+    Args:
+        org (str): GitHub organization name
+        repo (str): Repository name
+        path (str): File path within repository (e.g., "doc/README.md")
+
+    Returns:
+        str: JSON string containing file metadata and decoded content
+    """
+    try:
+        result = await get_file_content(org, repo, path)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+async def search_documentation_tool(org: str, query: str) -> str:
+    """
+    Search for documentation files across all repositories in an organization.
+
+    Uses GitHub Code Search API to find matching files in /doc folders.
+
+    Args:
+        org (str): GitHub organization name
+        query (str): Search query string (e.g., "authentication", "API", "tutorial")
+
+    Returns:
+        str: JSON string containing list of matching files with their locations
+    """
+    try:
+        result = await search_documentation(org, query)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 # ============================================================================
-# MCP Resources
+# Gradio Interface
 # ============================================================================
 
-@mcp.resource("documentation://{org}/{repo}")
-async def documentation_resource(org: str, repo: str) -> str:
-    """
-    MCP Resource: List documentation files in a repository
+# Create individual interfaces for each tool
+get_repos_interface = gr.Interface(
+    fn=get_org_repos_tool,
+    inputs=[gr.Textbox(label="Organization", placeholder="e.g., anthropics")],
+    outputs=[gr.Textbox(label="Repositories (JSON)", lines=20)],
+    title="Get Organization Repos",
+    description="Fetch all repositories from a GitHub organization with /doc folder detection",
+)
 
-    URI Pattern: documentation://organization-name/repository-name
+get_docs_interface = gr.Interface(
+    fn=get_repo_docs_tool,
+    inputs=[
+        gr.Textbox(label="Organization", placeholder="e.g., anthropics"),
+        gr.Textbox(label="Repository", placeholder="e.g., anthropic-sdk-python"),
+    ],
+    outputs=[gr.Textbox(label="Documentation Files (JSON)", lines=20)],
+    title="Get Repository Docs",
+    description="Get all documentation files from a repository's /doc folder",
+)
 
-    Example URIs:
-        documentation://anthropics/anthropic-sdk-python
-        documentation://openai/openai-python
+get_content_interface = gr.Interface(
+    fn=get_file_content_tool,
+    inputs=[
+        gr.Textbox(label="Organization", placeholder="e.g., anthropics"),
+        gr.Textbox(label="Repository", placeholder="e.g., anthropic-sdk-python"),
+        gr.Textbox(label="File Path", placeholder="e.g., doc/README.md"),
+    ],
+    outputs=[gr.Textbox(label="File Content (JSON)", lines=20)],
+    title="Get File Content",
+    description="Fetch and decode content of a specific file from GitHub",
+)
 
-    Args:
-        org: Organization name from URI
-        repo: Repository name from URI
+search_docs_interface = gr.Interface(
+    fn=search_documentation_tool,
+    inputs=[
+        gr.Textbox(label="Organization", placeholder="e.g., anthropics"),
+        gr.Textbox(label="Search Query", placeholder="e.g., streaming"),
+    ],
+    outputs=[gr.Textbox(label="Search Results (JSON)", lines=20)],
+    title="Search Documentation",
+    description="Search for documentation files across all repositories in an organization",
+)
 
-    Returns:
-        Formatted string listing all documentation files
-    """
-    docs = await get_repo_docs(org, repo)
-
-    if not docs:
-        return f"No documentation found in {org}/{repo}/doc folder"
-
-    # Format as readable list
-    lines = [
-        f"Documentation in {org}/{repo}",
-        "=" * 50,
-        ""
-    ]
-
-    for doc in docs:
-        lines.append(f"📄 {doc['name']}")
-        lines.append(f"   Type: {doc['type']}")
-        lines.append(f"   Size: {doc['size']:,} bytes")
-        lines.append(f"   Path: {doc['path']}")
-        lines.append("")
-
-    lines.append(f"Total: {len(docs)} files")
-
-    return "\n".join(lines)
-
-
-@mcp.resource("content://{org}/{repo}/{path}")
-async def content_resource(org: str, repo: str, path: str) -> str:
-    """
-    MCP Resource: Get content of a specific file
-
-    URI Pattern: content://organization/repository/path
-
-    Example URIs:
-        content://anthropics/sdk/doc/README.md
-        content://openai/openai-python/doc/api-reference.md
-
-    Args:
-        org: Organization name from URI
-        repo: Repository name from URI
-        path: File path within repository (e.g., "doc/README.md")
-
-    Returns:
-        File content as string
-    """
-    file_data = await get_file_content(org, repo, path)
-    return file_data["content"]
-
-# Add health check endpoint
-@mcp.custom_route("/health", methods=["GET"])
-async def health_check(request: Request) -> PlainTextResponse:
-    return PlainTextResponse("OK")
+# Combine into tabbed interface
+demo = gr.TabbedInterface(
+    [get_repos_interface, get_docs_interface, get_content_interface, search_docs_interface],
+    ["Get Repos", "Get Docs", "Get Content", "Search"],
+    title="GitHub MCP Server",
+)
 
 
 # ============================================================================
@@ -545,4 +519,4 @@ async def health_check(request: Request) -> PlainTextResponse:
 # ============================================================================
 
 if __name__ == "__main__":
-    mcp.run()
+    demo.launch(mcp_server=True, server_name="0.0.0.0", server_port=7860)
