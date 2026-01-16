@@ -90,7 +90,7 @@ Required:
 Optional:
 - `GITHUB_API_BASE_URL` - Default: `https://api.github.com`
 - `LOG_LEVEL` - Default: `INFO`
-- `MCP_SERVER_PORT` - Default: `8000` (note: not used in stdio mode)
+- `SERVER_PORT` - Default: `8000` (note: not used in stdio mode)
 
 ## Supported File Types
 

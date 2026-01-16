@@ -183,8 +183,7 @@ def input_components_showcase():
                     label="Code Editor",
                     language="python",
                     value="def hello():\n    print('Hello, World!')",
-                    lines=4,
-                    info="Syntax-highlighted code editor"
+                    lines=4
                 )
 
         submit_btn = gr.Button("Process All Inputs", variant="primary")

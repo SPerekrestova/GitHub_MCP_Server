@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field
 # =============================================================================
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "8080"))
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8080"))
 SERVER_HOST = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
 
 logging.basicConfig(

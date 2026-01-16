@@ -277,7 +277,7 @@ Navigate through the tabs:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_SERVER_PORT` | 8080 | Server port |
+| `SERVER_PORT` | 8080 | Server port |
 | `MCP_SERVER_HOST` | 0.0.0.0 | Server host |
 | `LOG_LEVEL` | INFO | Logging level |
 
@@ -354,7 +354,7 @@ Options:
 lsof -i :8080
 
 # Use a different port
-MCP_SERVER_PORT=9000 python mcp_showcase_server.py
+SERVER_PORT=9000 python mcp_showcase_server.py
 ```
 
 ### Client can't connect

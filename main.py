@@ -16,31 +16,24 @@ from fastapi import FastAPI
 from fastmcp import FastMCP
 from starlette.middleware.cors import CORSMiddleware
 
-# Load environment variables from .env file
-load_dotenv()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8003"))
+SERVER_HOST = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "random")
+GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
 
-# Configure logging
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=getattr(logging, LOG_LEVEL.upper()),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server with a descriptive name
 mcp = FastMCP("GitHub Knowledge Vault MCP Server")
 
-# Configuration
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_API_BASE = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
-MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "8003"))
-
 # API Constants
 RESULTS_PER_PAGE = 100
 SEARCH_RESULTS_LIMIT = 50
-
-# Validate configuration
-if not GITHUB_TOKEN:
-    logger.warning("GITHUB_TOKEN not set. API rate limits will be restricted.")
 
 
 # ============================================================================
@@ -125,32 +118,6 @@ def determine_content_type(filename: str) -> str:
 # ============================================================================
 
 async def get_org_repos(org: str) -> List[Dict[str, Any]]:
-    """
-    Fetch all repositories from a GitHub organization
-
-    This tool uses the GitHub Search API to efficiently find repositories
-    that have a /doc folder, falling back to checking each repo individually
-    if the search API is unavailable.
-
-    Args:
-        org: GitHub organization name (e.g., "microsoft", "google")
-
-    Returns:
-        List of repository dictionaries with structure:
-        [
-            {
-                "id": "123456",
-                "name": "repo-name",
-                "description": "Repository description",
-                "url": "https://github.com/org/repo",
-                "hasDocFolder": true
-            },
-            ...
-        ]
-
-    Example:
-        repos = await get_org_repos("anthropics")
-    """
     async with aiohttp.ClientSession() as session:
         headers = create_headers()
 
@@ -256,10 +223,8 @@ async def get_repo_docs(org: str, repo: str) -> List[Dict[str, Any]]:
                 "name": "README.md",
                 "path": "doc/README.md",
                 "type": "markdown",
-                "size": 1234,
                 "url": "https://github.com/org/repo/blob/main/doc/README.md",
                 "download_url": "https://raw.githubusercontent.com/.../README.md",
-                "sha": "abc123..."
             },
             ...
         ]
@@ -312,10 +277,8 @@ async def get_repo_docs(org: str, repo: str) -> List[Dict[str, Any]]:
                             "name": name,
                             "path": item["path"],
                             "type": content_type,
-                            "size": item["size"],
                             "url": item["html_url"],
                             "download_url": item.get("download_url", ""),
-                            "sha": item["sha"]
                         })
                     else:
                         skipped += 1
@@ -341,8 +304,6 @@ async def get_file_content(org: str, repo: str, path: str) -> Dict[str, Any]:
             "name": "README.md",
             "path": "doc/README.md",
             "content": "# Documentation\\n\\nThis is...",
-            "size": 1234,
-            "sha": "abc123...",
             "encoding": "base64"
         }
 
@@ -381,38 +342,11 @@ async def get_file_content(org: str, repo: str, path: str) -> Dict[str, Any]:
                 "name": data["name"],
                 "path": data["path"],
                 "content": content,
-                "size": data["size"],
-                "sha": data["sha"],
                 "encoding": data.get("encoding", "base64")
             }
 
 
 async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
-    """
-    Search for documentation files across all repositories in an organization
-
-    Uses GitHub Code Search API to find matching files in /doc folders
-
-    Args:
-        org: GitHub organization name
-        query: Search query string (e.g., "authentication", "API", "tutorial")
-
-    Returns:
-        List of search result dictionaries:
-        [
-            {
-                "name": "authentication.md",
-                "path": "doc/authentication.md",
-                "repository": "repo-name",
-                "url": "https://github.com/org/repo/blob/main/doc/auth.md",
-                "sha": "abc123..."
-            },
-            ...
-        ]
-
-    Example:
-        results = await search_documentation("anthropics", "streaming")
-    """
     async with aiohttp.ClientSession() as session:
         headers = create_headers()
         search_url = f"{GITHUB_API_BASE}/search/code"
@@ -441,7 +375,6 @@ async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
                     "path": item["path"],
                     "repository": repo_info.get("name", ""),
                     "url": item["html_url"],
-                    "sha": item["sha"]
                 })
 
             logger.info(f"Found {len(results)} matching files")
@@ -455,10 +388,30 @@ async def search_documentation(org: str, query: str) -> List[Dict[str, Any]]:
 @mcp.tool()
 async def get_org_repos_tool(org: str) -> List[Dict[str, Any]]:
     """
-    Fetch all repositories from a GitHub organization, detecting /doc folders
+    Fetch all repositories from a GitHub organization
+
+    This tool uses the GitHub Search API to efficiently find repositories
+    that have a /doc folder, falling back to checking each repo individually
+    if the search API is unavailable.
 
     Args:
         org: GitHub organization name (e.g., "microsoft", "google")
+
+    Returns:
+        List of repository dictionaries with structure:
+        [
+            {
+                "id": "123456",
+                "name": "repo-name",
+                "description": "Repository description",
+                "url": "https://github.com/org/repo",
+                "hasDocFolder": true
+            },
+            ...
+        ]
+
+    Example:
+        repos = await get_org_repos("anthropics")
     """
     return await get_org_repos(org)
 
@@ -493,9 +446,26 @@ async def search_documentation_tool(org: str, query: str) -> List[Dict[str, Any]
     """
     Search for documentation files across all repositories in an organization
 
+    Uses GitHub Code Search API to find matching files in /doc folders
+
     Args:
         org: GitHub organization name
         query: Search query string (e.g., "authentication", "API", "tutorial")
+
+    Returns:
+        List of search result dictionaries:
+        [
+            {
+                "name": "authentication.md",
+                "path": "doc/authentication.md",
+                "repository": "repo-name",
+                "url": "https://github.com/org/repo/blob/main/doc/auth.md",
+            },
+            ...
+        ]
+
+    Example:
+        results = await search_documentation("anthropics", "streaming")
     """
     return await search_documentation(org, query)
 
@@ -574,7 +544,7 @@ async def content_resource(org: str, repo: str, path: str) -> str:
 # ============================================================================
 
 # Create MCP ASGI application
-mcp_app = mcp.http_app()
+mcp_app = mcp.http_app(path="/mcp")
 
 # Create main FastAPI app
 main_app = FastAPI(title="GitHub MCP Server")
@@ -690,7 +660,7 @@ def create_gradio_interface():
                 ### Server Information
 
                 **GitHub Token:** {'✅ Configured' if GITHUB_TOKEN else '❌ Not configured'}
-                **Port:** {MCP_SERVER_PORT}
+                **Port:** {SERVER_PORT}
                 **API Base:** {GITHUB_API_BASE}
 
                 ### Links
@@ -715,7 +685,7 @@ app = gr.mount_gradio_app(main_app, gradio_blocks, path="/")
 # Add CORS middleware for remote access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins; restrict in production if needed
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -731,12 +701,10 @@ app.add_middleware(
 if __name__ == "__main__":
     import uvicorn
 
-    logger.info("=" * 60)
-    logger.info("Starting GitHub MCP Server...")
-    logger.info("=" * 60)
-    logger.info(f" Token configured: {'Yes' if GITHUB_TOKEN else 'No'}")
-    logger.info(f" Port: {MCP_SERVER_PORT}")
-    logger.info(f" MCP endpoint: /mcp/")
-    logger.info("=" * 60)
-
-    uvicorn.run(app, host="0.0.0.0", port=MCP_SERVER_PORT)
+    uvicorn.run(
+        "main:app",
+        host=SERVER_HOST,
+        port=SERVER_PORT,
+        reload=False,
+        log_level=LOG_LEVEL.lower(),
+    )
